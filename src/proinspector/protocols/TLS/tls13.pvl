@@ -1,0 +1,143 @@
+free c:channel.
+free ms: bitstring [private].
+
+type nonce.
+
+type element.
+const G: element [data].
+fun exp(element, bitstring):element.
+equation forall x: bitstring, y: bitstring; exp(exp(G,x),y) = exp(exp(G,y),x).
+
+type key.
+fun kdf_hs(nonce,nonce,element):key.
+fun kdf_as(nonce,nonce,element):key.
+
+fun enc(bitstring,key):bitstring.
+reduc forall m: bitstring, k: key; dec(enc(m,k),k) = m.
+
+type sskey.
+type spkey.
+fun spk(sskey):spkey.
+fun sign(bitstring,sskey): bitstring.
+reduc forall m: bitstring, k: sskey; checksign(sign(m,k),spk(k)) = m.
+
+const GoodParams, BadParams, EE, Fin,EmptyCert: bitstring. 
+fun CH(nonce,bitstring):bitstring [data].
+fun SH(nonce,bitstring):bitstring [data].
+fun CRT(spkey):bitstring [data].
+fun CRTV(bitstring):bitstring [data].
+
+event endS(nonce,nonce,key).
+event beginS(nonce,nonce,key).
+
+let Client13(spkS:spkey) = 
+    (new cr:nonce;
+    out(c,CH(cr,GoodParams));
+    new x: bitstring;
+    out(c, exp(G,x));
+    in(c, SH(sr:nonce,=GoodParams));
+    in(c,sdh:element);
+    in(c,esee:bitstring);
+    in(c,escrt:bitstring);
+    in(c,escrtv:bitstring);
+    in(c,efin:bitstring);
+    let k = exp(sdh,x) in 
+    let chs = kdf_hs(cr,sr,k) in
+    let cas = kdf_as(cr,sr,k) in
+    let see = dec(esee,chs) in (**)
+    let scrt = dec(escrt,chs) in (**)
+    let scrtv = dec(escrtv,chs) in (**)
+    let fin = dec(efin,chs) in (**)
+    if see = EE then
+        if scrt = CRT(spkS) then
+            let (=cr,=sr,=chs) = checksign(scrtv,spkS) in
+            event endS(cr,sr,chs);
+            if fin = Fin then
+                out(c,enc(Fin,chs));
+                out(c,enc(ms,cas))
+            else
+                0
+        else
+            0
+    else 
+        0
+    ).
+
+let Server13(spkS:spkey,sskS:sskey) = 
+    in(c,CH(cr:nonce,=GoodParams));
+    in(c,cdh:element);
+    new sr:nonce;
+    new y: bitstring;
+    let k = exp(cdh,y) in 
+    let shs = kdf_hs(cr,sr,k) in
+    let sas = kdf_as(cr,sr,k) in
+    event beginS(cr,sr,shs);
+    out(c,SH(sr, GoodParams));
+    out(c,exp(G,y));
+    out(c,enc(EE,shs));
+    out(c,enc(CRT(spkS),shs));
+    out(c,enc(sign((cr,sr,shs),sskS),shs));
+    out(c,enc(Fin,shs));
+    0.
+
+(* let ProcTf(spkS:spkey) = 
+    (new cr:nonce;
+    out(c,CH(cr,GoodParams));
+    new x: bitstring;
+    out(c, exp(G,x));
+    in(c, SH(sr:nonce,=GoodParams));
+    in(c,sdh:element);
+    in(c,esee:bitstring);
+    in(c,efin:bitstring);
+    let k = exp(sdh,x) in 
+    let chs = kdf_hs(cr,sr,k) in
+    let cas = kdf_as(cr,sr,k) in
+    let see = dec(esee,chs) in (**)
+    let fin = dec(efin,chs) in (**)
+    if see = EE then
+        if fin = Fin then
+            event endS(cr,sr,chs);
+            out(c,enc(Fin,chs));
+            out(c,enc(ms,cas))
+        else
+            0
+    else 
+        0
+    ).
+    
+let ProcTf2(spkS:spkey) = 
+    (new cr:nonce;
+    out(c,CH(cr,GoodParams));
+    new x: bitstring;
+    out(c, exp(G,x));
+    in(c, SH(sr:nonce,=GoodParams));
+    in(c,sdh:element);
+    in(c,esee:bitstring);
+    in(c,escrt:bitstring);
+    in(c,escrtv:bitstring);
+    in(c,efin:bitstring);
+    let k = exp(sdh,x) in 
+    let chs = kdf_hs(cr,sr,k) in
+    let cas = kdf_as(cr,sr,k) in
+    let see = dec(esee,chs) in (**)
+    let scrt = dec(escrt,chs) in (**)
+    let scrtv = dec(escrtv,chs) in (**)
+    let fin = dec(efin,chs) in (**)
+    if see = EE then
+        if scrt = CRT(spkS) then
+            (* let (=cr,=sr,=chs) = checksign(scrtv,spkS) in *)
+            event endS(cr,sr,chs);
+            if fin = Fin then
+                out(c,enc(Fin,chs));
+                out(c,enc(ms,cas))
+            else
+                0
+        else
+            0
+    else 
+        0
+    ).
+process
+    new sskS:sskey;
+    let spkS = spk(sskS) in out(c,spkS);
+    ((!Client13(spkS))|(!Server13(spkS,sskS))|(!ProcTf2(spkS))) *)
